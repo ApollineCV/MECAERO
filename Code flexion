@@ -1,62 +1,98 @@
+#Essai de flexion 
+
+#import des modules 
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-# --- 1. Identification de l'essai ---
-# On extrait le nom de l'expérience à partir du nom du dossier courant
-exp = os.getcwd().split(os.sep)[-1].split(".")[0] 
-print(f"Expérience de flexion : {exp}")
+exp=os.getcwd().split(os.sep)[-1].split(".")[0] #Trouver le nom du fichier
+exp
+dat=np.genfromtxt(exp+".csv", delimiter=",",skip_header=7, encoding="ISO-8859-1") #encoding = protocole pour lire le fichier
+dat #Lire le fichier csv
 
-# --- 2. Chargement des données ---
-# Le fichier CSV doit avoir le même nom que l'expérience (ex: ALU_BEND_N_RUPT-V12_GRP1_E021.csv)
-# On saute les 7 premières lignes d'en-tête
-dat = np.genfromtxt(exp + ".csv", delimiter=",", skip_header=7, encoding="ISO-8859-1")
+#Déplacement = machine, attention aux unités. Vérifier les tracés avant tout.
+#Tracer temps (1e col), déplacement vérin (2e col), charge/ force (3e col)
+tps=dat[:,0] #Temps
+Verin=(dat[:,1]-dat[0,1])*-1 #Déplacement de la machine, correction à l'origine si besoin (multiplié par -1 car y vers bas)
+Force=(dat[:,2])*-1 #Force (multiplié par -1 car compression)
 
-# Colonne 0 : Temps (s)
-# Colonne 1 : Déplacement du vérin (mm)
-# Colonne 2 : Force (N)
-tps = dat[:, 0]
-dep = dat[:, 1] - dat[0, 1]  # On tare le déplacement à l'origine
-force = dat[:, 2]
-
-# --- 3. Visualisation de la courbe brute ---
-plt.figure(figsize=(10, 6))
-plt.plot(dep, force, label='Données brutes')
-plt.xlabel('Déplacement (mm)')
-plt.ylabel('Force (N)')
-plt.title(f'Essai de flexion - {exp}')
-plt.legend()
-plt.grid(True)
+plt.plot(Verin, Force, label = 'vérin')
+plt.legend(loc='best')
+plt.grid()
+plt.xlabel("Déplacement vérin") #mm
+plt.ylabel("Force") #N
 plt.show()
 
-# --- 4. Calcul du module d'élasticité (E) ---
-# Paramètres géométriques de l'essai de flexion 3 points
-L = 100.0  # Distance entre appuis (mm)
-b = 10.0   # Largeur de l'éprouvette (mm)
-h = 2.0    # Épaisseur de l'éprouvette (mm)
+#Trouver F en fonction de y = K
+Section nominale de l'éprouvette $b_0=20.07$, hauteur de l'éprouvette dans le sens de la charge $h_0=2$, distance entre appuis $L= 110.00$ longueur utile de l'éprouvette $L_u=55.00$, #longueur initiale de l'extensomètre $l_0=49.99$ (50 + déplacement inital)
+import math
 
-# Moment d'inertie I = (b * h^3) / 12
-I = (b * h**3) / 12
+b0=20.07 #mm
+h0=2 #mm
+Lu=55.00 #mm
+L=110.00 #mm
 
-# On définit une zone élastique pour calculer la pente (k)
-# Ajustez les indices [100:500] selon vos données spécifiques
-pente, intercept = np.polyfit(dep[100:500], force[100:500], 1)
+#on définit l'inertie pour une section rectangulaire 
+I = (b0 * h0**3)/12
 
-# Formule du module d'Young en flexion : E = (L^3 * k) / (48 * I)
-E = (L**3 * pente) / (48 * I)
-print(f"Module d'Young identifié : {E:.0f} MPa")
+Force = Force
 
-# --- 5. Enregistrement des résultats ---
-infos = []
-infos.append("E: %g" % (E))
+Deplacement = Verin
+Deplacement_0 = Deplacement[0]
 
-# Création du fichier .info
-output_file = exp + '.info'
-with open(output_file, 'w') as fic:
-    for item in infos:
-        fic.writelines(item + "\n")
+#trouver F en fonction de y
+plt.plot(Deplacement, Force)
+plt.grid()
+plt.xlabel("déplacement y")
+plt.ylabel("Force")
+plt.show()
 
-# Lecture de vérification
-with open(output_file, 'r') as f:
-    content = f.read()
-    print(f"Contenu du fichier sauvegardé :\n{content}")
+#Définir partie élastique 
+#Objectif : Trouver l'intervalle élastique 
+#Extraction zone élastique, avec l'aide du tracé au-dessus
+idx = np.isfinite(Force) & np.isfinite(Deplacement)
+Force=Force[idx]
+Deplacement=Deplacement[idx]
+filtre_elas=(Force>40.)&(Force<=100.) #Si donne truc bizarre, on met étudie une autre partie de la région élastique
+Force=Force[filtre_elas]
+Deplacement=Deplacement[filtre_elas]
+
+#Plot de la partie élastique de F/y
+plt.plot(Deplacement, Force)
+plt.grid()
+plt.xlabel("déplacement y")
+plt.ylabel("Force")
+plt.show()
+
+#Trouver la pente de F/y = K
+K,b = np.polyfit(Deplacement, Force, 1) #K = module raideur, b = ordonnée à l'origine : Force =  K*Deplacement + b
+print(K,b)
+
+#Deplacement = eps_0 + b/K #On décale pour avoir une déformation nulle en 0
+plt.plot(Deplacement, Force)
+plt.grid()
+plt.xlabel("Déplacement y")     
+plt.ylabel("Force")
+plt.show()
+
+#trouver module d'Young 
+E = (K*L**3)/(48*I)
+print(E)
+
+#infos finales 
+infos=[]
+infos.append("E: %g" %(E))
+
+fic=open(exp+'.info', 'w')
+for info in infos : 
+    fic.writelines(info+"\n")
+fic.close()
+
+f= open(exp+'.info', 'r')
+nfos = f.read()
+f.close
+print(infos)
+
+#enregistrement données
+#np.savetxt("Resultats_"+exp+".csv", np.c_[E], delimiter=' ', fmt='%.10f %.10f %.10f %.10f %.10f %.10f', header="Moduled'Young")
+np.savetxt("Resultats_"+exp+".csv", [E], fmt='%.2f', header="Module_Young_MPa")
