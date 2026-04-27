@@ -1,99 +1,134 @@
+#identification loi de comportement en plasticité 
+
+#import modules
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 
-# --- 1. Extraction du nom de l'essai et lecture des infos ---
-# On récupère le nom du dossier pour identifier les fichiers correspondants
-exp = os.getcwd().split(os.sep)[-1].split(".")[0]
-print(f"Expérience : {exp}")
+#extraction nom de l'essai 
+exp=os.getcwd().split(os.sep)[-1].split(".")[0] #Trouver le nom du fichier
+exp
 
-def get_info(filename):
-    """Lit les paramètres matériaux (E, Rp02, etc.) depuis le fichier .info"""
-    with open(filename) as finp:
-        lines = finp.readlines()
-        data = {}
-        for line in lines:
-            items = line.split(':')
-            key = items[0].split('(')[0].strip()
-            data[key] = float(items[1])
-    return data['E'], data['Rp02'], data['Rm'], data['Au'], data['A'], data['strain_rate']
+#prendre infos du fichier 
+def get_info():
+    with open(infos) as finp:
+        lines=finp.readlines()
+        for line in lines :
+            items=line.split(':')
+            key=items[0].split('(')[0]
+            if key == "E":
+                E=float(items[1])
+            if key == "Rp02":
+                Rp02=float(items[1])
+            if key == "Rm":
+                Rm=float(items[1])
+            if key == "Au":
+                Au=float(items[1])
+            if key == "A":
+                A=float(items[1])
+            if key == "strain_rate":
+                rate=float(items[1])
+    return E, Rp02, Rm, Au, A, rate
+    
+global infos
 
-# Chargement des résultats mécaniques
-info_file = exp + '.info'
-E, Rp02, Rm, Au, A_fracture, rate = get_info(info_file)
-print(f"E: {E}, Rp02: {Rp02}, Rm: {Rm}")
+#extraction des résultats de l'autre fichier (fichier résultats du code élastique précédent)
+infos = exp +'.info'
+E, Rp02, Rm, Au, A, rate = get_info()
 
-# Chargement du CSV de résultats (doit contenir : eps_nom, sig_nom, eps_vrai, sig_vrai...)
-csv_data = np.genfromtxt("Resultats_" + exp + ".csv")
+print(E, Rp02, Rm, Au, A, rate)
 
-# --- 2. Nettoyage des données ---
-# On ne garde que la partie avant la striction (sig max) et au-dessus d'un seuil (ex: 70 MPa)
-sig_nom = csv_data[:, 4]
-id_max = np.argmax(sig_nom)
-clean_csv = csv_data[:id_max]
-clean_csv = clean_csv[clean_csv[:, 4] > 70]
+csv = np.genfromtxt("Resultats_"+exp+".csv")
 
-# Extraction des grandeurs
-eps_t = clean_csv[:, 3]    # Déformation vraie
-sig_t = clean_csv[:, 5]    # Contrainte vraie
-eps_nom = clean_csv[:, 1]  # Déformation nominale
-sig_nom = clean_csv[:, 4]  # Contrainte nominale
+#Expression des contrainte et déformation vraies
+#Contrainte inférieure à la contrainte maximale et supérieure à 70MPa (ou autre valeur en fonction du matériau)
+sig = csv[:,4]
 
-# Calcul de la déformation plastique vraie (p)
+id_max = np.argmax(sig)
+csv = csv[:id_max]
+sig = csv[:,4]
+csv=csv[sig>70]
+
+#Données vraies
+eps_t = csv[:,3]
+sig_t = csv[:,5]
+
+#Données nominales
+eps=csv[:,1]
+sig=csv[:,4]
+
+#déformation plastique vraie 
 p = eps_t - sig_t / E
+plt.xlabel('Déformation plastique vraie')
+plt.ylabel('Contrainte vraie')
+plt.plot(p, sig_t)
+plt.show()
 
-# --- 3. Régression pour la loi de puissance (Sigma = K * p^n) ---
-def perform_regression(sig, p_values, p_min):
-    """Effectue une régression linéaire en domaine logarithmique"""
-    mask = p_values > p_min
-    log_sig = np.log(sig[mask])
-    log_p = np.log(p_values[mask])
-    
-    slope, intercept, r_value, p_val, std_err = stats.linregress(log_p, log_sig)
-    
-    n = slope
+# Loi de puissance $\sigma = K\epsilon^n$
+def perform_regression(sig, p, p_f): #p_f = valeur minimale déformation
+    sig = sig[p>0]
+    p=p[p>0]
+
+    #Passage en log
+    log_sig = np.log(sig[p>p_f])
+    log_p = np.log(p[p>p_f])
+    #régression linéaire
+    slope, intercept, r_value, p_value, std_err = stats.linregress(log_p, log_sig)
+
+    n= slope
     K = np.exp(intercept)
+    print(n, K, r_value**2)
+    
     return K, n, r_value**2
 
-# Calcul des coefficients K et n
-K, n, r_sq = perform_regression(sig_t, p, 0.018)
-print(f"Loi de puissance : n = {n:.4f}, K = {K:.2f}, R² = {r_sq:.4f}")
+#Calcul des coefficients pour cet essai 
+K, n, r = perform_regression(sig_t, p, 0.018)
 
-# Visualisation Loi de Puissance
-fit_p = np.linspace(0.001, max(p), 100)
-fit_sig = K * (fit_p**n)
-plt.figure()
-plt.plot(p, sig_t, 'k.', label='Données expérimentales')
-plt.plot(fit_p, fit_sig, 'r-', label=f'Fit : K={K:.1f}, n={n:.3f}')
+#Courbe contrainte vraie - déformation plastique 
+fit_p = np.linspace(0, max(p), 100)
+fit_sig = K*((fit_p)**n)
 plt.xlabel('Déformation plastique')
-plt.ylabel('Contrainte vraie (MPa)')
-plt.legend()
-plt.title("Identification Loi de Puissance")
+plt.ylabel('Contrainte vraie')
+plt.plot(fit_p, fit_sig, label = 'simulee')
+plt.plot(p, sig_t, label = 'donnees')
+plt.legend(loc='best')
 plt.show()
 
-# --- 4. Identification Loi de Johnson-Cook (Sigma = A + B * p^n) ---
-# On teste plusieurs valeurs de A (proches de Rp02) pour trouver le meilleur fit
-best_A = 150 
-nc, B, rc_sq_jc = perform_regression(sig_t - best_A, p, 0.018)
+# Loi de Jonhson-cook $\sigma = A + B\epsilon^nc$
+#Test de plusieurs valeurs de A. En choisir une proche de la limite d'élasticité même si r n'est pas maximal.
+for A in np.arange(0, 170, 10):
+    print(A)
+    B, nc, rc_squared = perform_regression (sig_t-A, p, 0.018)
+    plt.plot(A, rc_squared, 'bo')
 
-print(f"Johnson-Cook : A = {best_A}, B = {B:.2f}, n = {nc:.4f}, R² = {rc_sq_jc:.4f}")
-
-# Visualisation Johnson-Cook
-fit_sig_jc = best_A + B * (fit_p**nc)
-plt.figure()
-plt.plot(p, sig_t, 'k.', label='Données')
-plt.plot(fit_p, fit_sig_jc, 'b-', label='Fit Johnson-Cook')
-plt.grid(True)
-plt.legend()
+plt.grid()
 plt.show()
 
-# --- 5. Sauvegarde des résultats ---
-output_filename = 'Plastique' + exp + '.info'
-with open(output_filename, 'w') as f:
-    f.write(f"A: {best_A}\n")
-    f.write(f"B: {B}\n")
-    f.write(f"nc: {nc}\n")
-    f.write(f"rc_squared: {rc_sq_jc}\n")
+#Vérification sur la valeur de A choisie 
+A = 150
+nc, B, rc_squared = perform_regression (sig_t-A, p, 0.018)
 
-print(f"Fichier de résultats sauvegardé : {output_filename}")
+fit_p = np.linspace(0, max(p), 100)
+fit_sig = A + B*((fit_p)**nc)
+plt.plot(fit_p, fit_sig)
+plt.plot(p, sig_t)
+plt.grid()
+plt.show()
+
+#infos finales 
+infos=[]
+infos.append("A: %g" %(A))
+infos.append("B: %g" %(B))
+infos.append("nc: %g" %(nc))
+infos.append("rc_squared: %g" %(rc_squared))
+
+fic=open('Plastique'+exp+'.info', 'w')
+for info in infos : 
+    fic.writelines(info+"\n")
+fic.close()
+
+f= open('Plastique'+exp+'.info', 'r')
+infos = f.read()
+f.close
+print(infos)
