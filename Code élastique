@@ -1,1 +1,61 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import os
 
+# Extraction du nom du fichier basé sur le dossier courant
+exp = os.getcwd().split(os.sep)[-1].split(".")[0] 
+print(f"Nom de l'expérience détecté : {exp}")
+
+# Lecture du fichier CSV correspondant
+# Note : assurez-vous que le fichier {exp}.csv est dans le même dossier
+dat = np.genfromtxt(exp + ".csv", delimiter=",", skip_header=7, encoding="ISO-8859-1")
+
+# Récupération des données
+tps = dat[:, 0] # Temps
+Verin = dat[:, 1] - dat[0, 1] # Déplacement de la machine (corrigé à l'origine)
+Extenso = (dat[:, 3] - dat[0, 3]) * 50 # Déplacement de l'extensomètre (L0 = 50mm)
+Force = dat[:, 2] # Force
+
+# Tracé de la courbe Force-Déplacement
+plt.figure(figsize=(10, 6))
+plt.xlabel('Déplacement [mm]')
+plt.ylabel('Force [N]')
+plt.plot(Extenso, Force, label='Extensomètre')
+plt.plot(Verin, Force, label='Vérin')
+plt.title(f"Courbe force-déplacement de l'essai {exp}")
+plt.legend(loc='best')
+plt.grid()
+plt.show()
+
+# --- Calcul des contraintes et déformations conventionnelles ---
+
+w0 = 6.22 # Largeur nominale [mm]
+e0 = 1.65 # Épaisseur nominale [mm]
+d0 = 0.0069 # Déformation initiale [mm]
+
+S0 = w0 * e0 # Section initiale [mm²]
+l0 = 50 - d0 # Longueur initiale de référence [mm]
+
+eps_0 = Extenso / l0 # Déformation nominale (epsilon)
+sig = Force / S0 # Contrainte nominale (sigma) [MPa]
+
+# On limite les données avant la striction/rupture pour l'analyse
+id_max = np.argmax(sig)
+eps_0_plot = np.copy(eps_0)
+eps_0_plot[id_max:] = np.nan
+
+# --- Calcul des contraintes et déformations vraies ---
+
+eps_true = np.log(1. + eps_0)
+sig_true = sig * (1 + eps_0)
+
+# Comparaison conventionnel vs vrai
+plt.figure(figsize=(10, 6))
+plt.xlabel('Déformation')
+plt.ylabel('Contrainte [MPa]')
+plt.plot(eps_0, sig, label='Conventionnel')
+plt.plot(eps_true, sig_true, label='Vrai')
+plt.title('Comparaison Contrainte-Déformation')
+plt.legend()
+plt.grid()
+plt.show()
