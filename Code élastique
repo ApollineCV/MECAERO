@@ -1,3 +1,4 @@
+#import modules 
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -5,11 +6,10 @@ import os
 exp=os.getcwd().split(os.sep)[-1].split(".")[0] #Trouver le nom du fichier
 exp
 dat=np.genfromtxt(exp+".csv", delimiter=",",skip_header=7, encoding="ISO-8859-1") #encoding = protocole pour lire le fichier
-dat #Lire le fichier csv
+dat #Lire le fichier csv de l'essai mécanique réel
 
 #Déplacement = machine, déformation = extenso, attention aux unités. Vérifier les tracés avant tout.
 #Tracer déplacement extenso (4e col)/vérin (2e col)
-
 # Récupération des données
 tps=dat[:,0] #Temps
 Verin=dat[:,1]-dat[0,1] #Déplacement de la machine, correction à l'origine si besoin
@@ -90,7 +90,7 @@ id_max=np.argmax(sig[idx])
 Au = eps[id_max]-sig[id_max]/E
 Au
 
-# Calculer limite d'élasticité
+# Calculer limite d'élasticité: On prend droite élasticité linéaire, on la décale de 0.2%, on voit quand ça coupe la courbe de comportement.
 x = np.array([0.,0.05]) #trouver bonne valeur finale pour zone élastique
 y = x*E
 
@@ -104,7 +104,6 @@ plt.plot(eps, sig)
 plt.title("détermination de la limite d'élasticité")
 plt.grid()
 plt.show()
-#On prend droite élasticité linéaire, on la décale de 0.2%, on voit quand ça coupe la courbe de comportement.
 
 #Calcul de Rp02
 eps_p=eps-sig/E #déformation plastique
