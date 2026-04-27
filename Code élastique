@@ -2,60 +2,199 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-# Extraction du nom du fichier basé sur le dossier courant
-exp = os.getcwd().split(os.sep)[-1].split(".")[0] 
-print(f"Nom de l'expérience détecté : {exp}")
+exp=os.getcwd().split(os.sep)[-1].split(".")[0] #Trouver le nom du fichier
+exp
+dat=np.genfromtxt(exp+".csv", delimiter=",",skip_header=7, encoding="ISO-8859-1") #encoding = protocole pour lire le fichier
+dat #Lire le fichier csv
 
-# Lecture du fichier CSV correspondant
-# Note : assurez-vous que le fichier {exp}.csv est dans le même dossier
-dat = np.genfromtxt(exp + ".csv", delimiter=",", skip_header=7, encoding="ISO-8859-1")
+#Déplacement = machine, déformation = extenso, attention aux unités. Vérifier les tracés avant tout.
+#Tracer déplacement extenso (4e col)/vérin (2e col)
 
 # Récupération des données
-tps = dat[:, 0] # Temps
-Verin = dat[:, 1] - dat[0, 1] # Déplacement de la machine (corrigé à l'origine)
-Extenso = (dat[:, 3] - dat[0, 3]) * 50 # Déplacement de l'extensomètre (L0 = 50mm)
-Force = dat[:, 2] # Force
+tps=dat[:,0] #Temps
+Verin=dat[:,1]-dat[0,1] #Déplacement de la machine, correction à l'origine si besoin
+Extenso=(dat[:,3]-dat[0,3])*50 #Déplacement de l'extensomètre : mutiplier pas l0
+Force=dat[:,2] #Force
 
-# Tracé de la courbe Force-Déplacement
-plt.figure(figsize=(10, 6))
-plt.xlabel('Déplacement [mm]')
-plt.ylabel('Force [N]')
-plt.plot(Extenso, Force, label='Extensomètre')
-plt.plot(Verin, Force, label='Vérin')
-plt.title(f"Courbe force-déplacement de l'essai {exp}")
+plt.xlabel('déplacement')
+plt.ylabel('force')
+plt.plot(Extenso, Force, label = 'extensomètre')
+plt.plot(Verin, Force, label = 'vérin')
+plt.title('Courbe force-déplacement de l\'essai 2 pour l\'aluminium')
 plt.legend(loc='best')
 plt.grid()
 plt.show()
 
-# --- Calcul des contraintes et déformations conventionnelles ---
+plt.xlabel('temps')
+plt.ylabel('force')
+plt.plot(tps, Force)
+plt.grid()
+plt.show()
 
-w0 = 6.22 # Largeur nominale [mm]
-e0 = 1.65 # Épaisseur nominale [mm]
-d0 = 0.0069 # Déformation initiale [mm]
+#Calcul des contraintes de déformations conventionnelles
+#Section nominale de l'éprouvette $w_0=6.20$, $e_0=1.64$, longueur utile de l'éprouvette $L_u=55.00$, longueur initiale de l'extensomètre $l_0=49.74$ (50 + déplacement inital)
+import math
+w0=6.22 #mm
+e0=1.65 #mm
+d0=0.0069 #mm : déformation initiale
+S0=w0*e0 #mm²
+l0= 50 - d0 #mm
+Force = Force
+eps_0=Extenso/l0 #(epsilon) - déformation nominale
+sig=Force/S0 #contrainte nominale
 
-S0 = w0 * e0 # Section initiale [mm²]
-l0 = 50 - d0 # Longueur initiale de référence [mm]
+id_max =  np.argmax(sig) #On coupe avant striction/rupture
+eps_0[id_max:] = np.nan
 
-eps_0 = Extenso / l0 # Déformation nominale (epsilon)
-sig = Force / S0 # Contrainte nominale (sigma) [MPa]
+# Tracé de la courbe contrainte nominale - déformation nominale 
+plt.xlabel('Déformation nominale')
+plt.ylabel('Contrainte nominale')
+plt.plot(eps_0, sig)
+plt.grid()
+plt.show()
 
-# On limite les données avant la striction/rupture pour l'analyse
-id_max = np.argmax(sig)
-eps_0_plot = np.copy(eps_0)
-eps_0_plot[id_max:] = np.nan
+#Identification loi de comportement élastique et contrainte maximale
+#Objectif : Trouver Rm, Au (mais pas abscisse de Rm, il faut retirer le retour élastique, à l'aide de E, $\sigma$ et $\epsilon$), limite conventionnelle élasticité et module élasticité.
+#Contrainte maximale
+Rm = np.max(sig)
+print("Rm=",Rm)
 
-# --- Calcul des contraintes et déformations vraies ---
+#Extraction zone élastique, avec l'aide du tracé au-dessus
+filtre_elas=(sig>50.)&(sig<=115.) #Si donne truc bizarre, on met étudie une autre partie de la région élastique
+sig_e=sig[filtre_elas]
+eps_e=eps_0[filtre_elas]
 
-eps_true = np.log(1. + eps_0)
-sig_true = sig * (1 + eps_0)
+plt.xlabel('Déformation élastique')
+plt.ylabel('Contrainte élastique')
+plt.plot(eps_e, sig_e)
+plt.grid()
+plt.show()
 
-# Comparaison conventionnel vs vrai
-plt.figure(figsize=(10, 6))
+# Trouver le module d'Young 
+idx = np.isfinite(eps_e) & np.isfinite(sig_e)
+E,b = np.polyfit(eps_e[idx], sig_e[idx], 1) #E = module d'Young, b = ordonnée à l'origine : sig =  E*eps + b
+print(E,b)
+
+eps = eps_0 + b/E #On décale pour avoir une déformation nulle en 0
+
+plt.xlabel('Déformation nominale')
+plt.ylabel('Contrainte nominale')
+plt.plot(eps, sig)
+plt.grid()
+plt.show()
+
+#Trouver l'allongement uniforme = la déformation plastique à la contrainte maximale
+#Allongement uniforme
+idx=np.isfinite(eps) & np.isfinite(sig)
+id_max=np.argmax(sig[idx])
+Au = eps[id_max]-sig[id_max]/E
+Au
+
+# Calculer limite d'élasticité
+x = np.array([0.,0.05]) #trouver bonne valeur finale pour zone élastique
+y = x*E
+
+x2= np.array([0.002, 0.05])
+y2=E*(x2-0.002)
+
+plt.axis([0.,0.05,0.,250.])
+plt.plot(x,y, 'r-')
+plt.plot(x2,y2, 'k-')
+plt.plot(eps, sig)
+plt.title("détermination de la limite d'élasticité")
+plt.grid()
+plt.show()
+#On prend droite élasticité linéaire, on la décale de 0.2%, on voit quand ça coupe la courbe de comportement.
+
+#Calcul de Rp02
+eps_p=eps-sig/E #déformation plastique
+Rp02=sig[eps_p<=0.002][-1] #On a atteint la limite d'élasticité à 0.2% lorsque la déformation plastique passe à 0.2%
+eps02=eps[eps_p<=0.002][-1]
+Rp02, eps02 #Arrondir à 5 pour la limite à 0.2%
+
+#Graphe pour montrer que c'est bien l'intersection
+plt.axis([0.,0.05,0.,250.])
+plt.plot(x2,y2, 'k-')
+plt.plot(eps, sig)
+plt.plot([eps02], [Rp02],'ro')
+plt.grid()
+plt.show()
+
+#Vitesse réelle de l'essai basée sur la mesure extentométrique
+tps=dat[:,0]
+idx = np.isfinite(eps) & np.isfinite(tps)
+rate = np.polyfit(tps[idx], eps[idx], 1)[0]
+rate
+
+#Synthèse graphique
+fig = plt.figure(figsize=(6,5))
+plt.xlabel
+plt.ylabel
+
+#Identification rupture
+#On regarde le vérin, là le déplacement (assez inutile)
+#Allongement à rupture - si extensomètre retiré avant, on utilise le vérin de la machine
+Verin_e=Verin[filtre_elas]
+Force_e=Force[filtre_elas]
+idx = np.isfinite(eps_e) & np.isfinite(sig_e)
+K_v = np.polyfit(Verin_e[idx], Force_e[idx],1)[0] #rigidité du système
+
+K_v
+
+Verin_p = Verin - Force / K_v #Déplacement plastique de l'éprouvette causée par le vérin
+
+plt.xlabel('Déplacement')
+plt.ylabel('Force')
+plt.plot(Verin, Force, 'k-', label='Déplacement Vérin, $K_v$=%0.f N/mm' % K_v)
+plt.plot(Verin_p, Force, 'r-', label='Déplacement Vérin plastique')
+plt.legend(loc='best')
+plt.grid()
+
+#On trace la déformation plastique du vérin, pour trouver la contrainte à rupture.
+#On transforme le déplacement en déformation: on divise par la zone utile
+
+lu=55.
+dpl_lu = Verin_p/lu
+
+plt.plot(dpl_lu, sig, 'r-D', label = 'Déformation plastique vérin')
+plt.plot((eps-sig/E), sig, 'k-', label ='Déformation extenso')
+plt.legend(loc='best')
+plt.grid()
+plt.show()
+
+#Allongement à rupture
+A = dpl_lu[-4] #Changer de point pour bien prendre le dernier avant la chute brutale car rupture
+A
+
+#infos finales 
+infos=[]
+infos.append("E: %g" %(E))
+infos.append("Rp02: %g" %(Rp02))
+infos.append("Rm: %g" %(Rm))
+infos.append("Au: %g" %(Au))
+infos.append("A: %g" %(A))
+infos.append("strain_rate: %g" %(rate))
+
+fic=open(exp+'.info', 'w')
+for info in infos : 
+    fic.writelines(info+"\n")
+fic.close()
+
+f= open(exp+'.info', 'r')
+infos = f.read()
+f.close
+print(infos)
+
+#Calcul des contraintes vraies et déformations vraies
+eps_true = np.log(1.+eps)
+sig_true=sig*(1+eps)
+
 plt.xlabel('Déformation')
-plt.ylabel('Contrainte [MPa]')
-plt.plot(eps_0, sig, label='Conventionnel')
-plt.plot(eps_true, sig_true, label='Vrai')
-plt.title('Comparaison Contrainte-Déformation')
+plt.ylabel('Contrainte')
+plt.plot(eps, sig, label = 'conv')
+plt.plot(eps_true, sig_true, label = 'true')
 plt.legend()
 plt.grid()
 plt.show()
+
+np.savetxt("Resultats_"+exp+".csv", np.c_[tps, eps, dpl_lu, eps_true, sig, sig_true], delimiter=' ', fmt='%.10f %.10f %.10f %.10f %.10f %.10f', header="Time(1) Deformation_nom(2) Def_plast_verin(3) Def_vraie(4) Contrainte_nom(5) Contrainte_vraie(6)")
