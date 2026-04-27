@@ -1,1 +1,62 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import os
 
+# --- 1. Identification de l'essai ---
+# On extrait le nom de l'expérience à partir du nom du dossier courant
+exp = os.getcwd().split(os.sep)[-1].split(".")[0] 
+print(f"Expérience de flexion : {exp}")
+
+# --- 2. Chargement des données ---
+# Le fichier CSV doit avoir le même nom que l'expérience (ex: ALU_BEND_N_RUPT-V12_GRP1_E021.csv)
+# On saute les 7 premières lignes d'en-tête
+dat = np.genfromtxt(exp + ".csv", delimiter=",", skip_header=7, encoding="ISO-8859-1")
+
+# Colonne 0 : Temps (s)
+# Colonne 1 : Déplacement du vérin (mm)
+# Colonne 2 : Force (N)
+tps = dat[:, 0]
+dep = dat[:, 1] - dat[0, 1]  # On tare le déplacement à l'origine
+force = dat[:, 2]
+
+# --- 3. Visualisation de la courbe brute ---
+plt.figure(figsize=(10, 6))
+plt.plot(dep, force, label='Données brutes')
+plt.xlabel('Déplacement (mm)')
+plt.ylabel('Force (N)')
+plt.title(f'Essai de flexion - {exp}')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# --- 4. Calcul du module d'élasticité (E) ---
+# Paramètres géométriques de l'essai de flexion 3 points
+L = 100.0  # Distance entre appuis (mm)
+b = 10.0   # Largeur de l'éprouvette (mm)
+h = 2.0    # Épaisseur de l'éprouvette (mm)
+
+# Moment d'inertie I = (b * h^3) / 12
+I = (b * h**3) / 12
+
+# On définit une zone élastique pour calculer la pente (k)
+# Ajustez les indices [100:500] selon vos données spécifiques
+pente, intercept = np.polyfit(dep[100:500], force[100:500], 1)
+
+# Formule du module d'Young en flexion : E = (L^3 * k) / (48 * I)
+E = (L**3 * pente) / (48 * I)
+print(f"Module d'Young identifié : {E:.0f} MPa")
+
+# --- 5. Enregistrement des résultats ---
+infos = []
+infos.append("E: %g" % (E))
+
+# Création du fichier .info
+output_file = exp + '.info'
+with open(output_file, 'w') as fic:
+    for item in infos:
+        fic.writelines(item + "\n")
+
+# Lecture de vérification
+with open(output_file, 'r') as f:
+    content = f.read()
+    print(f"Contenu du fichier sauvegardé :\n{content}")
